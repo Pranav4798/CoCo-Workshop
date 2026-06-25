@@ -1,4 +1,3 @@
-```markdown
 # Snowflake Dev Day – Cortex Code (CoCo) Demo
 
 This repository contains the artifacts, prompts, source files, and execution plan used during the Snowflake Dev Day Virtual (Americas) demonstration featuring Snowflake Cortex Code (CoCo).
@@ -55,4 +54,4 @@ This repository serves as:
 This repository is intended for learning and experimentation.
 
 Please ensure compliance with your organization's policies and the applicable Snowflake licensing terms before using any generated code in production.
-```
+
