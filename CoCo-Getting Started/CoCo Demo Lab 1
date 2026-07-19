@@ -1,0 +1,346 @@
+ 
+> What tables are in the `COCO_WORKSHOP.SOURCE_DATA` schema?
+  For each table, give me a one-line description of what it appears to contain and identify
+  which ones are most relevant to an AP invoices Silver layer.
+
+  ┌────────────────────────────┬─────────────────────────────────────────────────────────────────┬──────────────────┐
+  │ Table                      │ Description                                                     │ Silver-relevant? │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────┤
+  │ BRONZE_SAP_AP_INVOICES     │ Accounts payable invoices from SAP (15 rows)                    │ Yes              │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────┤
+  │ BRONZE_ORACLE_AP_INVOICES  │ Accounts payable invoices from Oracle ERP (15 rows)             │ Yes              │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────┤
+  │ BRONZE_BAAN_AP_INVOICES    │ Accounts payable invoices from Baan ERP (10 rows)               │ Yes              │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────┤
+  │ BRONZE_WORKDAY_AP_INVOICES │ Accounts payable invoices from Workday (10 rows)                │ Yes              │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────┤
+  │ AGENT_EVAL_SET             │ Golden question set for evaluating an analytics agent (15 rows) │ No               │
+  └────────────────────────────┴─────────────────────────────────────────────────────────────────┴──────────────────┘
+  
+ For a Silver AP invoices layer, all four BRONZE_*_AP_INVOICES tables are the inputs. They contain the same conceptual data (vendor, invoice date, amount, currency, payment
+  terms, approval status, etc.) but with different column naming conventions per source system. The Silver layer would unify them into a single canonical schema with a
+  SOURCE_SYSTEM discriminator.
+  
+=================================================
+
+Compare the columns between
+COCO_WORKSHOP.SOURCE_DATA.BRONZE_SAP_AP_INVOICES and
+COCO_WORKSHOP.SOURCE_DATA.BRONZE_ORACLE_AP_INVOICES.
+Return:
+- Equivalent fields with different names
+- Fields that require type normalization or default values
+- Differences that should remain open questions instead of becoming hidden assumptions
+
+
+  Equivalent Fields (Different Names, Same Semantics)
+
+  ┌──────────────────────┬──────────────────┬──────────────────┬─────────────────────────────────┐
+  │ Silver concept       │ SAP column       │ Oracle column    │ Notes                           │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Invoice ID           │ INVOICE_ID       │ INV_ID           │ Both VARCHAR(20), direct rename │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Invoice Number       │ INVOICE_NUMBER   │ INV_NUM          │ Both VARCHAR(30)                │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Vendor/Supplier ID   │ VENDOR_ID        │ SUPPLIER_ID      │ Both VARCHAR(15)                │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Vendor/Supplier Name │ VENDOR_NAME      │ SUPPLIER_NAME    │ Both VARCHAR(100)               │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Invoice Date         │ INVOICE_DATE     │ INV_DATE         │ Both DATE                       │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Due Date             │ DUE_DATE         │ PAYMENT_DUE_DATE │ Both DATE                       │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Amount               │ INVOICE_AMOUNT   │ TOTAL_AMOUNT     │ Both NUMBER(18,2)               │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Currency             │ CURRENCY_CODE    │ CURRENCY         │ Both VARCHAR(3)                 │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Payment Terms        │ PAYMENT_TERMS    │ TERMS_CODE       │ Both VARCHAR(20), values differ │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ PO Reference         │ PO_NUMBER        │ PURCHASE_ORDER   │ Both VARCHAR(20)                │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Line Description     │ LINE_DESCRIPTION │ DESCRIPTION      │ Both VARCHAR(200)               │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ GL/Account Code      │ GL_ACCOUNT       │ ACCOUNT_CODE     │ Both VARCHAR(20)                │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Cost Center/Dept     │ COST_CENTER      │ DEPT_CODE        │ Both VARCHAR(20)                │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Approval Status      │ APPROVAL_STATUS  │ STATUS           │ Both VARCHAR(20), values differ │
+  ├──────────────────────┼──────────────────┼──────────────────┼─────────────────────────────────┤
+  │ Created Timestamp    │ CREATED_AT       │ CREATION_DATE    │ Both TIMESTAMP_NTZ              │
+  └──────────────────────┴──────────────────┴──────────────────┴─────────────────────────────────┘
+
+  ────────────────────────────────────────
+
+  Fields Requiring Normalization or Defaults
+
+  Row 1
+  Field: Payment Terms
+  Issue: SAP uses NET30/NET60; Oracle uses N30/N60
+  Suggested handling: Normalize to a single convention (e.g., NET30) or map to numeric days-to-pay
+  ────────────────────────────────────────────────────────────
+  Row 2
+  Field: Approval Status
+  Issue: SAP: APPROVED, PENDING; Oracle: VALIDATED, APPROVED, PENDING
+  Suggested handling: Need a canonical status enum. VALIDATED has no SAP equivalent -- likely maps to APPROVED but not certain
+  ────────────────────────────────────────────────────────────
+  Row 3
+  Field: Source-specific metadata
+  Issue: SAP has SAP_COMPANY_CODE + SAP_DOCUMENT_TYPE; Oracle has ORACLE_ORG_ID + ORACLE_SOURCE
+  Suggested handling: Carry as nullable Silver columns, or collapse into a generic SOURCE_METADATA VARIANT/JSON field
+
+  ────────────────────────────────────────
+
+  Open Questions (Should NOT Be Silently Assumed)
+
+  1. Does Oracle VALIDATED = SAP APPROVED? Oracle has a 3-state lifecycle (PENDING -> VALIDATED -> APPROVED), while SAP appears 2-state (PENDING -> APPROVED). Is VALIDATED a
+  middle step or the final approval? This affects downstream reporting on approval rates and aging.
+  2. Are vendor IDs globally unique across systems? SAP uses V-1001 etc., Oracle uses S-2001. If the same physical vendor exists in both systems, the Silver layer needs a
+  cross-reference or master vendor ID -- otherwise deduplication at the Gold layer is impossible.
+  3. COST_CENTER vs. DEPT_CODE -- same granularity? SAP values look like CC-ENG-01 (functional + numeric), Oracle uses D-ENG (department only). Are these mappable 1:1, or does
+  one system encode a finer hierarchy?
+  4. Currency amount semantics -- SAP calls it INVOICE_AMOUNT and Oracle calls it TOTAL_AMOUNT. For multi-line invoices, is Oracle's value a header-level total while SAP stores
+   line-level amounts? The presence of LINE_DESCRIPTION in SAP suggests line-level grain, but Oracle also has a single DESCRIPTION. Need to confirm both are at the same grain
+  (one row = one invoice header vs. one row = one line item).
+  5. ORACLE_SOURCE values (AP_IMPORT vs MANUAL) -- should the Silver layer filter out or flag manual entries differently? This distinction doesn't exist in SAP data at all.
+  
+=========================================
+
+ctrl+P # Plan mode on
+
+Use database COCO_WORKSHOP and schema PIPELINE_LAB for outputs.
+Create a Dynamic Table called SILVER_AP_INVOICES in my current schema by combining
+COCO_WORKSHOP.SOURCE_DATA.BRONZE_SAP_AP_INVOICES and
+COCO_WORKSHOP.SOURCE_DATA.BRONZE_ORACLE_AP_INVOICES.
+
+Proposed plan:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Context
+
+ • Both bronze tables have 17 columns each with 1:1 semantic mappings (different names, same data types)
+ • Payment terms need normalization: SAP NET30/NET60 vs Oracle N30/N60
+ • Approval status needs normalization: Oracle VALIDATED mapped to APPROVED (most conservative assumption given both systems treat it as "ready to pay")
+ • Source-specific metadata columns (SAP_COMPANY_CODE, SAP_DOCUMENT_TYPE, ORACLE_ORG_ID, ORACLE_SOURCE) are intentionally excluded from Silver — they don't generalize across
+systems
+ • A Dynamic Table with TARGET_LAG = '1 hour' on COCO_WORKSHOP_WH keeps the Silver layer auto-refreshing
+
+ Implementation Steps
+
+ Single DDL statement — CREATE OR REPLACE DYNAMIC TABLE COCO_WORKSHOP.PIPELINE_LAB.SILVER_AP_INVOICES:
+
+ 1. Surrogate key: MD5(SOURCE_SYSTEM || '|' || SOURCE_INVOICE_ID) as INVOICE_SK
+ 2. Source discriminator: Literal 'SAP' or 'ORACLE' as SOURCE_SYSTEM
+ 3. Canonical columns (17 total): SOURCE_INVOICE_ID, INVOICE_NUMBER, VENDOR_ID, VENDOR_NAME, INVOICE_DATE, DUE_DATE, INVOICE_AMOUNT, CURRENCY_CODE, PAYMENT_TERMS_RAW,
+PAYMENT_TERMS (normalized), PO_NUMBER, LINE_DESCRIPTION, GL_ACCOUNT, COST_CENTER, APPROVAL_STATUS_RAW, APPROVAL_STATUS (normalized), CREATED_AT
+ 4. Normalization via CASE:
+    • PAYMENT_TERMS: N30 → NET30, N60 → NET60
+    • APPROVAL_STATUS: VALIDATED → APPROVED
+ 5. Raw columns preserved: Both *_RAW and normalized versions are kept so nothing is hidden
+
+ Verification
+
+ • SELECT COUNT(*) FROM COCO_WORKSHOP.PIPELINE_LAB.SILVER_AP_INVOICES — expect 30 rows (15 SAP + 15 Oracle)
+ • SELECT SOURCE_SYSTEM, COUNT(*) ... GROUP BY SOURCE_SYSTEM — expect 15/15 split
+ • SELECT DISTINCT PAYMENT_TERMS — expect only NET30, NET60
+ • SELECT DISTINCT APPROVAL_STATUS — expect APPROVED, PENDING
+ • Verify no NULLs in INVOICE_SK
+
+ Critical Files
+
+ This is a pure SQL DDL operation (no filesystem files). The single artifact is the dynamic table DDL itself, which compiled successfully during planning.
+ 
+ * Done. COCO_WORKSHOP.PIPELINE_LAB.SILVER_AP_INVOICES is live as a dynamic table:
+
+  ┌────────────────────────┬─────────────────────────────────────┐
+  │ Check                  │ Result                              │
+  ├────────────────────────┼─────────────────────────────────────┤
+  │ Total rows             │ 30 (15 SAP + 15 Oracle)             │
+  ├────────────────────────┼─────────────────────────────────────┤
+  │ NULL surrogate keys    │ 0                                   │
+  ├────────────────────────┼─────────────────────────────────────┤
+  │ Payment terms values   │ NET30, NET60 only (normalized)      │
+  ├────────────────────────┼─────────────────────────────────────┤
+  │ Approval status values │ APPROVED, PENDING only (normalized) │
+  ├────────────────────────┼─────────────────────────────────────┤
+  │ Auto-refresh           │ Every 1 hour via COCO_WORKSHOP_WH   │
+  └────────────────────────┴─────────────────────────────────────┘
+
+  The raw values are preserved in PAYMENT_TERMS_RAW and APPROVAL_STATUS_RAW columns so the normalization decisions remain auditable.
+  
+=====================================
+
+/skill list
+
+What does the $dynamic-tables skill do? Summarize when I should use it,
+what inputs it expects, and what kinds of output it returns.
+
+Here's a summary of the $dynamic-tables skill:
+
+  What It Does
+
+  Expert guidance for Snowflake Dynamic Tables — covers the full lifecycle: creating pipelines, configuring refreshes, monitoring health, troubleshooting failures, and
+  optimizing performance.
+
+  When to Use It
+
+  Invoke this skill when you need to:
+
+  ┌───────────────────────────┬────────────────────────────────────────────────────────────────────────────────────┐
+  │ Intent                    │ Example phrases                                                                    │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Create                    │ "create dynamic table", "set up DT pipeline"                                       │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Monitor                   │ "check DT status", "refresh history", "week over week trend"                       │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Troubleshoot              │ "DT failing", "not refreshing", "suspended", "full refresh instead of incremental" │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Optimize                  │ "slow refresh", "make incremental", "decompose DT"                                 │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Alerting                  │ "alert on DT failure", "notify on refresh failure"                                 │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Permissions               │ "insufficient privileges", "DT permission denied"                                  │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Migrate tasks→DT          │ "convert streams+tasks to DT"                                                      │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Custom incrementalization │ "CI DT", "MERGE INTO SELF", "stream-static join"                                   │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ dbt→DT                    │ "convert dbt model to dynamic table"                                               │
+  ├───────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+  │ Pipeline diagnostics      │ "pipeline timeline", "UPSTREAM_FAILED", "critical path"                            │
+  └───────────────────────────┴────────────────────────────────────────────────────────────────────────────────────┘
+
+  What It Expects
+
+  1. A Snowflake session context (account, role, warehouse)
+  2. A clear intent (create, monitor, troubleshoot, optimize, etc.)
+  3. For creation: source table names and desired refresh cadence
+  4. For troubleshooting: the DT name and schema to investigate
+
+  What It Returns
+
+  • DDL statements for creating/altering dynamic tables with correct TARGET_LAG, REFRESH_MODE, and warehouse settings
+  • Diagnostic queries for health checks, refresh history, and error analysis
+  • Recommendations on refresh mode (incremental vs full), pipeline topology (chaining DTs), and when to use Streams+Tasks instead
+  • Decision trees — e.g., "DTs vs Streams+Tasks" based on specific blockers (sub-minute latency, external tables, procedural logic, side effects)
+  • Constraint warnings — things like "incremental DTs can't depend on full-refresh DTs" or "SELECT * breaks on schema changes"
+
+  It follows a "no mutations without approval" philosophy — read-only diagnostics run freely, but any DDL/DML requires an explicit stopping point for your confirmation.
+  
+=======================================
+
+$dynamic-tables
+Analyze the Dynamic Table SILVER_AP_INVOICES in my current schema.
+Return:
+1. The recommended TARGET_LAG choice for this workflow and why
+2. SQL to inspect current state, lag, and refresh history
+3. The main failure or staleness patterns to watch for
+4. A short best-practices checklist for operating this table well
+
+  1. Recommended TARGET_LAG
+
+  Current setting: 1 hour
+  Recommendation: Keep 1 hour or relax to DOWNSTREAM if you add a Gold layer DT on top.
+
+  Rationale:
+
+  • The source bronze tables are batch-loaded ERP data (SAP, Oracle). These systems typically land data in daily or multi-hour batch windows, not real-time streams.
+  • A 1-hour lag is already more aggressive than the source refresh cadence — you won't miss anything.
+  • If you later chain a Gold-layer DT (e.g., GOLD_AP_SPEND_SUMMARY) downstream, switch this Silver DT to TARGET_LAG = DOWNSTREAM so Snowflake only refreshes it when the
+  downstream consumer needs it, saving warehouse credits.
+  • With only 30 rows today, refresh cost is negligible. As volume grows to millions, DOWNSTREAM avoids unnecessary hourly refreshes when no one is consuming.
+
+  ────────────────────────────────────────
+
+  2. SQL to Inspect State, Lag, and Refresh History
+
+    -- Current state and configuration
+    SHOW DYNAMIC TABLES LIKE 'SILVER_AP_INVOICES' IN SCHEMA COCO_WORKSHOP.PIPELINE_LAB;
+    -- Key columns: scheduling_state, refresh_mode, target_lag, data_timestamp, rows
+
+    -- Refresh history (last 20 refreshes)
+    SELECT name, state, state_message, refresh_action, refresh_trigger,
+           refresh_start_time, refresh_end_time,
+           DATEDIFF('second', refresh_start_time, refresh_end_time) AS duration_sec
+    FROM TABLE(COCO_WORKSHOP.INFORMATION_SCHEMA.DYNAMIC_TABLE_REFRESH_HISTORY(
+      NAME_PREFIX => 'COCO_WORKSHOP.PIPELINE_LAB.SILVER_AP_INVOICES'
+    ))
+    ORDER BY refresh_start_time DESC
+    LIMIT 20;
+
+    -- Current data freshness (how stale is it right now?)
+    SELECT data_timestamp, DATEDIFF('minute', data_timestamp, CURRENT_TIMESTAMP()) AS staleness_minutes
+    FROM TABLE(COCO_WORKSHOP.INFORMATION_SCHEMA.DYNAMIC_TABLE_GRAPH_HISTORY(
+      NAME_PREFIX => 'COCO_WORKSHOP.PIPELINE_LAB.SILVER_AP_INVOICES'
+    ))
+    ORDER BY data_timestamp DESC
+    LIMIT 1;
+
+  Current status: scheduling_state = ACTIVE, refresh_mode = INCREMENTAL, initial creation refresh succeeded in 2 seconds.
+
+  ────────────────────────────────────────
+
+  3. Failure / Staleness Patterns to Watch
+
+  Row 1
+  Pattern: FULL refresh fallback
+  Cause: Source table schema change (column added/dropped), or change tracking window expired
+  How you'd see it: refresh_action = 'FULL' in refresh history; refresh_mode_reason populated in SHOW output
+  ────────────────────────────────────────────────────────────
+  Row 2
+  Pattern: UPSTREAM_FAILED
+  Cause: One of the bronze source tables is dropped, renamed, or has change tracking disabled
+  How you'd see it: state = 'FAILED', state_message references upstream object
+  ────────────────────────────────────────────────────────────
+  Row 3
+  Pattern: Warehouse suspended / unavailable
+  Cause: COCO_WORKSHOP_WH auto-suspended and takes too long to resume under contention
+  How you'd see it: Refresh durations spike; possible timeout errors
+  ────────────────────────────────────────────────────────────
+  Row 4
+  Pattern: Change tracking expiration
+  Cause: If the DT doesn't refresh for longer than the source table's DATA_RETENTION_TIME_IN_DAYS, incremental tracking is lost
+  How you'd see it: Forces a FULL refresh; if retention is 0 days, refresh fails entirely
+  ────────────────────────────────────────────────────────────
+  Row 5
+  Pattern: Scheduling state = SUSPENDED
+  Cause: Manual ALTER DYNAMIC TABLE ... SUSPEND or account-level suspension
+  How you'd see it: No refreshes occur; staleness grows unbounded
+
+  For this specific DT, the most likely real-world issue is change tracking expiration if the warehouse is paused for extended periods (the source tables have RETENTION_TIME = 
+  1 day).
+
+  ────────────────────────────────────────
+
+  4. Best-Practices Checklist
+
+  • [ ] Explicit columns — Already done (no SELECT *). Schema changes to source tables won't silently break the DT.
+  • [ ] INCREMENTAL mode confirmed — The DT is running incrementally. CASE expressions and UNION ALL are compatible with incremental refresh.
+  • [ ] Monitor refresh_mode_reason — If Snowflake ever sets this to non-null, investigate immediately (it means incremental was downgraded to full).
+  • [ ] Don't disable change tracking on BRONZE_SAP_AP_INVOICES or BRONZE_ORACLE_AP_INVOICES — this will break the DT.
+  • [ ] Right-size the warehouse — X-Small is fine for 30 rows. If sources grow to millions, consider a dedicated DT warehouse to avoid contention with ad-hoc queries.
+  • [ ] Set up alerting — Use DYNAMIC_TABLE_REFRESH_HISTORY with ERROR_ONLY => TRUE in a Snowflake Alert or Task to catch failures before staleness impacts downstream
+  consumers.
+  • [ ] Switch to DOWNSTREAM when you add a Gold layer — avoids unnecessary refreshes when no downstream consumer needs fresh data.
+  • [ ] Retention alignment — Ensure source table retention (DATA_RETENTION_TIME_IN_DAYS) exceeds your maximum expected gap between refreshes.
+  
+===============================================
+
+Give me one concise proof query for SILVER_AP_INVOICES that shows record counts
+by SOURCE_SYSTEM and is easy to rerun after future changes.
+
+
+* SELECT SOURCE_SYSTEM, COUNT(*) AS RECORD_COUNT
+    FROM COCO_WORKSHOP.PIPELINE_LAB.SILVER_AP_INVOICES
+    GROUP BY SOURCE_SYSTEM
+    ORDER BY SOURCE_SYSTEM;
+
+  ┌───────────────┬──────────────┐
+  │ SOURCE_SYSTEM │ RECORD_COUNT │
+  ├───────────────┼──────────────┤
+  │ ORACLE        │ 15           │
+  ├───────────────┼──────────────┤
+  │ SAP           │ 15           │
+  └───────────────┴──────────────┘
+
+  Rerun this after adding Baan/Workday to the DT — you'll see new rows appear with BAAN and WORKDAY source systems.
+
+============================================
+
